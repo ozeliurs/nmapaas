@@ -9,25 +9,9 @@ from typing import Any
 from nmapaas.models import ScanProfile
 
 PROFILE_ARGUMENTS = {
-    ScanProfile.QUICK: [
-        "-sT",
-        "-Pn",
-        "-T4",
-        "--top-ports",
-        "100",
-        "-sV",
-        "--script=banner",
-    ],
-    ScanProfile.STANDARD: [
-        "-sT",
-        "-Pn",
-        "-T3",
-        "--top-ports",
-        "1000",
-        "-sV",
-        "--script=banner",
-    ],
-    ScanProfile.FULL: ["-sT", "-Pn", "-T3", "-p-", "-sV", "--script=banner"],
+    ScanProfile.QUICK: ["-sT", "-Pn", "-T4", "--top-ports", "100"],
+    ScanProfile.STANDARD: ["-sT", "-Pn", "-T3", "--top-ports", "1000", "-sV"],
+    ScanProfile.FULL: ["-sT", "-Pn", "-T3", "-p-", "-sV"],
 }
 PROGRESS_PATTERN = re.compile(r"About\s+(\d+(?:\.\d+)?)% done", re.IGNORECASE)
 
@@ -128,14 +112,6 @@ def parse_nmap_xml(path: Path) -> dict[str, Any]:
         for port_node in host_node.findall("ports/port"):
             state_node = port_node.find("state")
             service_node = port_node.find("service")
-            banner_node = next(
-                (
-                    node
-                    for node in port_node.findall("script")
-                    if node.get("id") == "banner"
-                ),
-                None,
-            )
             ports.append(
                 {
                     "port": int(port_node.get("portid", "0")),
@@ -144,7 +120,6 @@ def parse_nmap_xml(path: Path) -> dict[str, Any]:
                     "service": service_node.get("name") if service_node is not None else None,
                     "product": service_node.get("product") if service_node is not None else None,
                     "version": service_node.get("version") if service_node is not None else None,
-                    "banner": banner_node.get("output") if banner_node is not None else None,
                 }
             )
         hosts.append(

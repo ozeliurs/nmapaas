@@ -1,20 +1,12 @@
 from pathlib import Path
 
-from nmapaas.models import ScanProfile
-from nmapaas.scanner import PROFILE_ARGUMENTS, PROGRESS_PATTERN, parse_nmap_xml
+from nmapaas.scanner import PROGRESS_PATTERN, parse_nmap_xml
 
 
 def test_progress_pattern() -> None:
     match = PROGRESS_PATTERN.search("Stats: 0:00:04 elapsed; About 37.50% done")
     assert match
     assert float(match.group(1)) == 37.5
-
-
-def test_all_profiles_collect_service_banners() -> None:
-    for profile in ScanProfile:
-        arguments = PROFILE_ARGUMENTS[profile]
-        assert "-sV" in arguments
-        assert "--script=banner" in arguments
 
 
 def test_parse_nmap_xml(tmp_path: Path) -> None:
@@ -29,7 +21,6 @@ def test_parse_nmap_xml(tmp_path: Path) -> None:
       <port protocol="tcp" portid="443">
         <state state="open"/>
         <service name="https" product="nginx" version="1.27"/>
-        <script id="banner" output="HTTP/1.1 400 Bad Request&#xa;Server: nginx/1.27"/>
       </port>
     </ports>
   </host>
@@ -49,5 +40,4 @@ def test_parse_nmap_xml(tmp_path: Path) -> None:
         "service": "https",
         "product": "nginx",
         "version": "1.27",
-        "banner": "HTTP/1.1 400 Bad Request\nServer: nginx/1.27",
     }
