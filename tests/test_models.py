@@ -30,3 +30,8 @@ def test_target_must_match_configured_allowlist() -> None:
 def test_pia_location_names_allow_underscores() -> None:
     request = ScanCreate(target=ip_address("8.8.8.8"), location="us_south_west")
     assert request.location == "us_south_west"
+
+
+def test_location_defaults_to_least_loaded_selector() -> None:
+    request = ScanCreate(target=ip_address("8.8.8.8"))
+    assert request.location == "default"

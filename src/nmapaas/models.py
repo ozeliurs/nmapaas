@@ -23,7 +23,9 @@ class ScanStatus(StrEnum):
 
 class ScanCreate(BaseModel):
     target: IPv4Address | IPv6Address
-    location: str = Field(min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    location: str = Field(
+        default="default", min_length=1, max_length=64, pattern=r"^[a-z0-9][a-z0-9_-]*$"
+    )
     profile: ScanProfile = ScanProfile.STANDARD
 
 

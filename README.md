@@ -23,8 +23,11 @@ Create a scan:
 curl -X POST http://localhost:8000/v1/scans \
   -H 'Authorization: Bearer development-key' \
   -H 'Content-Type: application/json' \
-  -d '{"target":"8.8.8.8","location":"swiss","profile":"quick"}'
+  -d '{"target":"8.8.8.8","profile":"quick"}'
 ```
+
+The optional `location` defaults to `default`, which selects the configured location with the
+fewest queued and running scans. Set a location explicitly to route a scan to that worker.
 
 List configured regions:
 

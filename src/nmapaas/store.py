@@ -20,6 +20,27 @@ class ScanStore:
     def _queue(location: str) -> str:
         return f"nmapaas:queue:{location}"
 
+    @staticmethod
+    def _running(location: str) -> str:
+        return f"nmapaas:running:{location}"
+
+    async def least_loaded_location(self, locations: set[str]) -> str:
+        ordered_locations = sorted(locations)
+        if not ordered_locations:
+            raise ValueError("no scan locations configured")
+
+        async with self.redis.pipeline(transaction=False) as pipeline:
+            for location in ordered_locations:
+                pipeline.llen(self._queue(location))
+                pipeline.scard(self._running(location))
+            counts = await pipeline.execute()
+
+        loads = {
+            location: int(counts[index * 2]) + int(counts[index * 2 + 1])
+            for index, location in enumerate(ordered_locations)
+        }
+        return min(ordered_locations, key=loads.__getitem__)
+
     async def create(self, scan: Scan) -> None:
         async with self.redis.pipeline(transaction=True) as pipeline:
             pipeline.set(self._key(scan.id), scan.model_dump_json(), ex=self.ttl_seconds)
@@ -70,9 +91,12 @@ class ScanStore:
             return await self.finish_cancelled(scan_id)
         if scan.status != ScanStatus.QUEUED:
             return None
-        return await self.update(
+        running = await self.update(
             scan_id, status=ScanStatus.RUNNING, started_at=datetime.now(UTC)
         )
+        if running:
+            await self.redis.sadd(self._running(running.location), scan_id)
+        return running
 
     async def progress(self, scan_id: str, value: float) -> None:
         scan = await self.get(scan_id)
@@ -80,25 +104,32 @@ class ScanStore:
             await self.update(scan_id, progress=min(value, 99.9))
 
     async def finish_completed(self, scan_id: str, result: dict[str, Any]) -> None:
-        await self.update(
+        scan = await self.update(
             scan_id,
             status=ScanStatus.COMPLETED,
             progress=100,
             result=result,
             completed_at=datetime.now(UTC),
         )
+        if scan:
+            await self.redis.srem(self._running(scan.location), scan_id)
 
     async def finish_failed(self, scan_id: str, error: str) -> None:
-        await self.update(
+        scan = await self.update(
             scan_id,
             status=ScanStatus.FAILED,
             error=error,
             completed_at=datetime.now(UTC),
         )
+        if scan:
+            await self.redis.srem(self._running(scan.location), scan_id)
 
     async def finish_cancelled(self, scan_id: str) -> Scan | None:
-        return await self.update(
+        scan = await self.update(
             scan_id,
             status=ScanStatus.CANCELLED,
             completed_at=datetime.now(UTC),
         )
+        if scan:
+            await self.redis.srem(self._running(scan.location), scan_id)
+        return scan

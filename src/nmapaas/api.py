@@ -83,7 +83,9 @@ async def health(request: Request) -> dict[str, str]:
 async def get_locations(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> list[dict[str, str]]:
-    return [{"name": location, "type": "wireguard"} for location in sorted(settings.locations)]
+    return [{"name": "default", "type": "least-loaded"}] + [
+        {"name": location, "type": "wireguard"} for location in sorted(settings.locations)
+    ]
 
 
 @app.post(
@@ -97,10 +99,18 @@ async def create_scan(
     settings: Annotated[Settings, Depends(get_settings)],
     store: Annotated[ScanStore, Depends(get_store)],
 ) -> Scan:
-    if body.location not in settings.locations:
+    if not settings.locations:
+        raise HTTPException(status_code=503, detail="no scan locations configured")
+    if body.location == "default":
+        location = await store.least_loaded_location(settings.locations)
+    elif body.location in settings.locations:
+        location = body.location
+    else:
         raise HTTPException(status_code=422, detail="unsupported scan location")
     validate_target(body, settings)
-    scan = Scan.new(scan_id=str(uuid4()), request=body)
+    scan = Scan.new(
+        scan_id=str(uuid4()), request=body.model_copy(update={"location": location})
+    )
     await store.create(scan)
     return scan
 
