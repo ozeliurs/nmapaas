@@ -46,7 +46,11 @@ curl -X DELETE -H 'Authorization: Bearer development-key' \
   http://localhost:8000/v1/scans/SCAN_ID
 ```
 
-Profiles are `quick`, `standard`, and `full`. Targets must be literal IPv4 or IPv6 addresses. Private, loopback, link-local, multicast, reserved, and unspecified targets are denied unless `ALLOW_PRIVATE_TARGETS=true`. `ALLOWED_TARGET_CIDRS` can further restrict targets.
+Profiles are `quick`, `standard`, and `full`. All profiles run service/version detection and the
+Nmap `banner` script; each port result includes service, product, version, and banner fields when
+Nmap can identify them. Targets must be literal IPv4 or IPv6 addresses. Private, loopback,
+link-local, multicast, reserved, and unspecified targets are denied unless
+`ALLOW_PRIVATE_TARGETS=true`. `ALLOWED_TARGET_CIDRS` can further restrict targets.
 
 ## Local Development
 
