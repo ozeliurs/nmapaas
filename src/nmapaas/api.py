@@ -5,7 +5,8 @@ from ipaddress import ip_address
 from typing import Annotated
 from uuid import uuid4
 
-from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from redis.asyncio import Redis
 
 from nmapaas.config import Settings, get_settings
@@ -25,16 +26,22 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="Nmap as a Service", version="0.1.0", lifespan=lifespan)
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
 def require_api_key(
     settings: Annotated[Settings, Depends(get_settings)],
-    authorization: Annotated[str | None, Header()] = None,
+    credentials: Annotated[
+        HTTPAuthorizationCredentials | None, Depends(bearer_scheme)
+    ] = None,
 ) -> None:
     if not settings.api_key:
         return
-    scheme, _, credential = (authorization or "").partition(" ")
-    if scheme.lower() != "bearer" or not secrets.compare_digest(credential, settings.api_key):
+    if (
+        credentials is None
+        or credentials.scheme.lower() != "bearer"
+        or not secrets.compare_digest(credentials.credentials, settings.api_key)
+    ):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="invalid API key")
 
 
@@ -66,6 +73,13 @@ async def health(request: Request) -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/v1/locations", dependencies=[Depends(require_api_key)])
+async def get_locations(
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> list[dict[str, str]]:
+    return [{"name": location, "type": "wireguard"} for location in sorted(settings.locations)]
+
+
 @app.post(
     "/v1/scans",
     response_model=Scan,
@@ -90,7 +104,9 @@ async def create_scan(
     response_model=Scan,
     dependencies=[Depends(require_api_key)],
 )
-async def get_scan(scan_id: str, store: Annotated[ScanStore, Depends(get_store)]) -> Scan:
+async def get_scan(
+    scan_id: str, store: Annotated[ScanStore, Depends(get_store)]
+) -> Scan:
     scan = await store.get(scan_id)
     if scan is None:
         raise HTTPException(status_code=404, detail="scan not found")

@@ -9,9 +9,9 @@ metadata:
     app.kubernetes.io/component: worker
     nmapaas.io/location: {{ .name }}
 spec:
+  replicas: {{ .replicas }}
   strategy:
     type: Recreate
-  replicas: {{ .replicas }}
   selector:
     matchLabels:
       app.kubernetes.io/name: {{ include "nmapaas.name" $ }}
@@ -26,50 +26,72 @@ spec:
         nmapaas.io/location: {{ .name }}
     spec:
       automountServiceAccountToken: false
+      securityContext:
+        sysctls:
+          - name: net.ipv4.conf.all.src_valid_mark
+            value: "1"
       containers:
-        - name: vpn
-          image: {{ $.Values.pia.gluetunImage }}
+        - name: wireguard
+          image: {{ $.Values.pia.image }}
           env:
-            - name: VPN_SERVICE_PROVIDER
-              value: private internet access
-            - name: VPN_TYPE
-              value: openvpn
-            - name: SERVER_REGIONS
-              value: {{ .piaRegion | quote }}
-            - name: FIREWALL_OUTBOUND_SUBNETS
-              value: {{ $.Values.pia.clusterOutboundSubnets | quote }}
-            - name: VPN_PORT_FORWARDING
-              value: "off"
-            - name: OPENVPN_USER
+            - name: LOC
+              value: {{ .piaLocation | quote }}
+            - name: USER
               valueFrom:
                 secretKeyRef:
                   name: {{ include "nmapaas.piaSecret" $ }}
                   key: username
-            - name: OPENVPN_PASSWORD
+            - name: PASS
               valueFrom:
                 secretKeyRef:
                   name: {{ include "nmapaas.piaSecret" $ }}
                   key: password
-          ports:
-            - name: vpn-health
-              containerPort: 9999
-          startupProbe:
-            httpGet:
-              path: /
-              port: vpn-health
-            failureThreshold: 30
-            periodSeconds: 2
+            - name: LOCAL_NETWORK
+              value: {{ $.Values.pia.localNetworks | quote }}
+            - name: FIREWALL
+              value: "1"
+            - name: KEEPALIVE
+              value: {{ $.Values.pia.keepalive | quote }}
+            - name: RECONNECT
+              value: {{ ternary "1" "0" $.Values.pia.reconnect | quote }}
+            - name: ACTIVE_HEALTHCHECKS
+              value: "1"
+            - name: EXIT_ON_FATAL
+              value: "1"
+            - name: POST_UP
+              value: touch /pia-shared/ready
+            - name: PRE_DOWN
+              value: rm -f /pia-shared/ready
+            - name: FATAL_SCRIPT
+              value: rm -f /pia-shared/ready
+            - name: PRE_RECONNECT
+              value: rm -f /pia-shared/ready
+            - name: POST_RECONNECT
+              value: touch /pia-shared/ready
+          readinessProbe:
+            exec:
+              command: ["/scripts/healthcheck.sh"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
           livenessProbe:
-            httpGet:
-              path: /
-              port: vpn-health
+            exec:
+              command: ["/scripts/healthcheck.sh"]
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          resources:
+            {{- toYaml $.Values.pia.resources | nindent 12 }}
           securityContext:
+            allowPrivilegeEscalation: false
             capabilities:
               add: ["NET_ADMIN"]
-            allowPrivilegeEscalation: false
+              drop: ["ALL"]
           volumeMounts:
             - name: tun
               mountPath: /dev/net/tun
+            - name: pia-state
+              mountPath: /pia
+            - name: pia-shared
+              mountPath: /pia-shared
         - name: worker
           image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
           imagePullPolicy: {{ $.Values.image.pullPolicy }}
@@ -82,8 +104,8 @@ spec:
               value: {{ .name | quote }}
             - name: WORKER_CONCURRENCY
               value: {{ .concurrency | quote }}
-            - name: VPN_HEALTH_URL
-              value: http://127.0.0.1:9999/
+            - name: VPN_READY_FILE
+              value: /pia-shared/ready
           securityContext:
             runAsUser: 10001
             runAsGroup: 10001
@@ -92,14 +114,23 @@ spec:
             capabilities:
               drop: ["ALL"]
             readOnlyRootFilesystem: true
+          resources:
+            {{- toYaml $.Values.worker.resources | nindent 12 }}
           volumeMounts:
             - name: tmp
               mountPath: /tmp
+            - name: pia-shared
+              mountPath: /pia-shared
+              readOnly: true
       volumes:
         - name: tun
           hostPath:
             path: /dev/net/tun
             type: CharDevice
+        - name: pia-state
+          emptyDir: {}
+        - name: pia-shared
+          emptyDir: {}
         - name: tmp
           emptyDir: {}
 {{- end }}

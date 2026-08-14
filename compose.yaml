@@ -4,27 +4,77 @@ services:
     command: ["redis-server", "--appendonly", "yes"]
     volumes:
       - redis-data:/data
+    networks:
+      default:
+        ipv4_address: 172.30.0.2
 
   api:
     build: .
     environment:
-      REDIS_URL: redis://redis:6379/0
-      SCAN_LOCATIONS: local
+      REDIS_URL: redis://172.30.0.2:6379/0
       API_KEY: ${API_KEY:-development-key}
+      SCAN_LOCATIONS: ${PIA_LOCATION:-swiss}
     ports:
       - "8000:8000"
     depends_on:
       - redis
 
+  wireguard:
+    image: ghcr.io/thrnz/docker-wireguard-pia:20260801_master_9e89d10
+    cap_add:
+      - NET_ADMIN
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    sysctls:
+      net.ipv4.conf.all.src_valid_mark: 1
+    environment:
+      LOC: ${PIA_LOCATION:-swiss}
+      USER: ${PIA_USER:?PIA_USER is required}
+      PASS: ${PIA_PASS:?PIA_PASS is required}
+      FIREWALL: 1
+      KEEPALIVE: 25
+      RECONNECT: 1
+      ACTIVE_HEALTHCHECKS: 1
+      EXIT_ON_FATAL: 1
+      POST_UP: touch /pia-shared/ready
+      PRE_DOWN: rm -f /pia-shared/ready
+      FATAL_SCRIPT: rm -f /pia-shared/ready
+      PRE_RECONNECT: rm -f /pia-shared/ready
+      POST_RECONNECT: touch /pia-shared/ready
+    healthcheck:
+      test: ["CMD", "/scripts/healthcheck.sh"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    volumes:
+      - pia-state:/pia
+      - pia-shared:/pia-shared
+
   worker:
     build: .
     command: ["nmapaas-worker"]
+    network_mode: service:wireguard
     environment:
-      REDIS_URL: redis://redis:6379/0
-      SCAN_LOCATION: local
+      REDIS_URL: redis://172.30.0.2:6379/0
+      SCAN_LOCATION: ${PIA_LOCATION:-swiss}
       WORKER_CONCURRENCY: 2
+      VPN_READY_FILE: /pia-shared/ready
+    volumes:
+      - pia-shared:/pia-shared:ro
     depends_on:
-      - redis
+      redis:
+        condition: service_started
+      wireguard:
+        condition: service_healthy
 
 volumes:
   redis-data:
+  pia-state:
+  pia-shared:
+
+networks:
+  default:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24

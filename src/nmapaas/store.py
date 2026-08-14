@@ -21,9 +21,8 @@ class ScanStore:
         return f"nmapaas:queue:{location}"
 
     async def create(self, scan: Scan) -> None:
-        key = self._key(scan.id)
         async with self.redis.pipeline(transaction=True) as pipeline:
-            pipeline.set(key, scan.model_dump_json(), ex=self.ttl_seconds)
+            pipeline.set(self._key(scan.id), scan.model_dump_json(), ex=self.ttl_seconds)
             pipeline.rpush(self._queue(scan.location), scan.id)
             await pipeline.execute()
 
@@ -31,13 +30,7 @@ class ScanStore:
         raw = await self.redis.get(self._key(scan_id))
         return Scan.model_validate_json(raw) if raw else None
 
-    async def save(self, scan: Scan) -> None:
-        await self.redis.set(
-            self._key(scan.id), scan.model_dump_json(), ex=self.ttl_seconds
-        )
-
     async def update(self, scan_id: str, **changes: Any) -> Scan | None:
-        # WATCH preserves cancellation requests that race worker progress updates.
         key = self._key(scan_id)
         async with self.redis.pipeline(transaction=True) as pipeline:
             while True:
@@ -57,9 +50,7 @@ class ScanStore:
 
     async def request_cancel(self, scan_id: str) -> Scan | None:
         scan = await self.get(scan_id)
-        if scan is None:
-            return None
-        if scan.status in {ScanStatus.QUEUED, ScanStatus.RUNNING}:
+        if scan and scan.status in {ScanStatus.QUEUED, ScanStatus.RUNNING}:
             return await self.update(scan_id, status=ScanStatus.CANCELLING)
         return scan
 

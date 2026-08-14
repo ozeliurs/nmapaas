@@ -4,7 +4,6 @@ image:
   pullPolicy: IfNotPresent
 
 api:
-  replicas: 2
   service:
     type: ClusterIP
     port: 80
@@ -17,22 +16,45 @@ api:
       memory: 256Mi
 
 auth:
-  # Prefer existingSecret in production. It must contain an api-key key.
   existingSecret: ""
   apiKey: change-me
 
 pia:
-  # Prefer existingSecret in production. It must contain username and password keys.
   existingSecret: ""
   username: ""
   password: ""
-  gluetunImage: qmcgaw/gluetun:v3.40.0
-  # Gluetun's firewall otherwise blocks access from workers to in-cluster Redis.
-  clusterOutboundSubnets: "10.0.0.0/8"
+  image: ghcr.io/thrnz/docker-wireguard-pia:20260801_master_9e89d10
+  # Must include your Kubernetes service and pod networks so workers can reach Redis.
+  localNetworks: "10.0.0.0/8"
+  keepalive: 25
+  reconnect: true
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
+
+worker:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 64Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
 
 redis:
   image: redis:8.0-alpine
   storage: 1Gi
+  resources:
+    requests:
+      cpu: 25m
+      memory: 32Mi
+    limits:
+      cpu: 250m
+      memory: 128Mi
 
 scan:
   jobTtlSeconds: 86400
@@ -41,11 +63,11 @@ scan:
   allowedTargetCidrs: ""
 
 locations:
-  - name: us-east
-    piaRegion: US East
+  - name: swiss
+    piaLocation: swiss
     replicas: 1
     concurrency: 2
-  - name: sweden
-    piaRegion: Sweden
+  - name: us-california
+    piaLocation: us_california
     replicas: 1
     concurrency: 2

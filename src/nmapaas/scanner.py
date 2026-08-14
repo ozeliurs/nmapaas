@@ -78,7 +78,6 @@ async def run_scan(
                     await asyncio.wait_for(process.wait(), timeout=0.5)
                 except TimeoutError:
                     pass
-
             if process.returncode is None:
                 try:
                     await asyncio.wait_for(process.wait(), timeout=5)

@@ -17,11 +17,11 @@ class Settings(BaseSettings):
     scan_timeout_seconds: int = Field(default=3_600, ge=10)
     allow_private_targets: bool = False
     allowed_target_cidrs: str = ""
-    vpn_health_url: str = ""
+    vpn_ready_file: str = ""
 
     @cached_property
     def locations(self) -> set[str]:
-        return {value.strip() for value in self.scan_locations.split(",") if value.strip()}
+        return {location.strip() for location in self.scan_locations.split(",") if location.strip()}
 
     @cached_property
     def target_networks(self) -> list[IPv4Network | IPv6Network]:

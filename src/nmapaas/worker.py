@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from functools import partial
-from urllib.request import urlopen
+from pathlib import Path
 
 from redis.asyncio import Redis
 
@@ -14,31 +14,30 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 logger = logging.getLogger(__name__)
 
 
-async def wait_for_vpn(url: str) -> None:
-    if not url:
+async def wait_for_vpn(ready_file: str) -> None:
+    if not ready_file:
         return
-    while True:
-        try:
-            response = await asyncio.to_thread(urlopen, url, timeout=2)
-            response.close()
-            logger.info("VPN is healthy")
-            return
-        except OSError:
-            logger.warning("waiting for VPN")
-            await asyncio.sleep(2)
+    waited = False
+    while not await asyncio.to_thread(Path(ready_file).exists):
+        waited = True
+        logger.info("waiting for WireGuard")
+        await asyncio.sleep(2)
+    if waited:
+        logger.info("WireGuard is ready")
 
 
 async def process_scans(worker_number: int, store: ScanStore) -> None:
     settings = get_settings()
     logger.info("worker %d consuming location %s", worker_number, settings.scan_location)
     while True:
+        await wait_for_vpn(settings.vpn_ready_file)
         scan_id = await store.next_scan(settings.scan_location)
         if scan_id is None:
             continue
+        await wait_for_vpn(settings.vpn_ready_file)
         scan = await store.start(scan_id)
         if scan is None or scan.status == ScanStatus.CANCELLED:
             continue
-        logger.info("starting scan %s", scan.id)
         try:
             result = await run_scan(
                 scan.target,
@@ -49,7 +48,6 @@ async def process_scans(worker_number: int, store: ScanStore) -> None:
             )
         except ScanCancelledError:
             await store.finish_cancelled(scan.id)
-            logger.info("cancelled scan %s", scan.id)
         except (ScanExecutionError, OSError) as exc:
             await store.finish_failed(scan.id, str(exc))
             logger.warning("failed scan %s: %s", scan.id, exc)
@@ -58,19 +56,18 @@ async def process_scans(worker_number: int, store: ScanStore) -> None:
             logger.exception("unexpected failure for scan %s", scan.id)
         else:
             await store.finish_completed(scan.id, result)
-            logger.info("completed scan %s", scan.id)
 
 
 async def run() -> None:
     settings = get_settings()
-    await wait_for_vpn(settings.vpn_health_url)
+    await wait_for_vpn(settings.vpn_ready_file)
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
     while True:
         try:
             await redis.ping()
             break
         except Exception:
-            logger.warning("waiting for Redis")
+            logger.info("waiting for Redis")
             await asyncio.sleep(2)
     store = ScanStore(redis, settings.job_ttl_seconds)
     try:

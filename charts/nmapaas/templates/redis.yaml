@@ -30,6 +30,8 @@ spec:
           readinessProbe:
             exec:
               command: ["redis-cli", "ping"]
+          resources:
+            {{- toYaml .Values.redis.resources | nindent 12 }}
           volumeMounts:
             - name: data
               mountPath: /data
