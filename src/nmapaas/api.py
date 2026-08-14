@@ -6,6 +6,7 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.responses import RedirectResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from redis.asyncio import Redis
 
@@ -65,6 +66,11 @@ def validate_target(request: ScanCreate, settings: Settings) -> None:
     )
     if unsafe and not settings.allow_private_targets:
         raise HTTPException(status_code=422, detail="non-public targets are disabled")
+
+
+@app.get("/", include_in_schema=False)
+async def root() -> RedirectResponse:
+    return RedirectResponse(url="/docs")
 
 
 @app.get("/healthz", include_in_schema=False)
