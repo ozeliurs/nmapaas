@@ -1,0 +1,30 @@
+services:
+  redis:
+    image: redis:8.0-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+
+  api:
+    build: .
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      SCAN_LOCATIONS: local
+      API_KEY: ${API_KEY:-development-key}
+    ports:
+      - "8000:8000"
+    depends_on:
+      - redis
+
+  worker:
+    build: .
+    command: ["nmapaas-worker"]
+    environment:
+      REDIS_URL: redis://redis:6379/0
+      SCAN_LOCATION: local
+      WORKER_CONCURRENCY: 2
+    depends_on:
+      - redis
+
+volumes:
+  redis-data:

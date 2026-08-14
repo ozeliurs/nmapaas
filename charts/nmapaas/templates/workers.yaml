@@ -1,0 +1,105 @@
+{{- range .Values.locations }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nmapaas.fullname" $ }}-worker-{{ .name }}
+  labels:
+    {{- include "nmapaas.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: worker
+    nmapaas.io/location: {{ .name }}
+spec:
+  strategy:
+    type: Recreate
+  replicas: {{ .replicas }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "nmapaas.name" $ }}
+      app.kubernetes.io/instance: {{ $.Release.Name }}
+      app.kubernetes.io/component: worker
+      nmapaas.io/location: {{ .name }}
+  template:
+    metadata:
+      labels:
+        {{- include "nmapaas.labels" $ | nindent 8 }}
+        app.kubernetes.io/component: worker
+        nmapaas.io/location: {{ .name }}
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: vpn
+          image: {{ $.Values.pia.gluetunImage }}
+          env:
+            - name: VPN_SERVICE_PROVIDER
+              value: private internet access
+            - name: VPN_TYPE
+              value: openvpn
+            - name: SERVER_REGIONS
+              value: {{ .piaRegion | quote }}
+            - name: FIREWALL_OUTBOUND_SUBNETS
+              value: {{ $.Values.pia.clusterOutboundSubnets | quote }}
+            - name: VPN_PORT_FORWARDING
+              value: "off"
+            - name: OPENVPN_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nmapaas.piaSecret" $ }}
+                  key: username
+            - name: OPENVPN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nmapaas.piaSecret" $ }}
+                  key: password
+          ports:
+            - name: vpn-health
+              containerPort: 9999
+          startupProbe:
+            httpGet:
+              path: /
+              port: vpn-health
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet:
+              path: /
+              port: vpn-health
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN"]
+            allowPrivilegeEscalation: false
+          volumeMounts:
+            - name: tun
+              mountPath: /dev/net/tun
+        - name: worker
+          image: "{{ $.Values.image.repository }}:{{ $.Values.image.tag }}"
+          imagePullPolicy: {{ $.Values.image.pullPolicy }}
+          command: ["nmapaas-worker"]
+          envFrom:
+            - configMapRef:
+                name: {{ include "nmapaas.fullname" $ }}
+          env:
+            - name: SCAN_LOCATION
+              value: {{ .name | quote }}
+            - name: WORKER_CONCURRENCY
+              value: {{ .concurrency | quote }}
+            - name: VPN_HEALTH_URL
+              value: http://127.0.0.1:9999/
+          securityContext:
+            runAsUser: 10001
+            runAsGroup: 10001
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tun
+          hostPath:
+            path: /dev/net/tun
+            type: CharDevice
+        - name: tmp
+          emptyDir: {}
+{{- end }}

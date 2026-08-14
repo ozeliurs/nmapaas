@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "nmapaas.fullname" . }}
+  labels:
+    {{- include "nmapaas.labels" . | nindent 4 }}
+data:
+  REDIS_URL: redis://{{ include "nmapaas.fullname" . }}-redis:6379/0
+  SCAN_LOCATIONS: {{ range $index, $location := .Values.locations }}{{ if $index }},{{ end }}{{ $location.name }}{{ end }}
+  JOB_TTL_SECONDS: {{ .Values.scan.jobTtlSeconds | quote }}
+  SCAN_TIMEOUT_SECONDS: {{ .Values.scan.timeoutSeconds | quote }}
+  ALLOW_PRIVATE_TARGETS: {{ .Values.scan.allowPrivateTargets | quote }}
+  ALLOWED_TARGET_CIDRS: {{ .Values.scan.allowedTargetCidrs | quote }}

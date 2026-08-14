@@ -1,0 +1,4 @@
+API service: {{ include "nmapaas.fullname" . }}-api
+
+Port-forward locally with:
+  kubectl port-forward svc/{{ include "nmapaas.fullname" . }}-api 8000:{{ .Values.api.service.port }}
