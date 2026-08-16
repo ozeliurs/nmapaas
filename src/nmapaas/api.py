@@ -22,6 +22,11 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Uvicorn configures its own loggers but not the root logger; set INFO so
+    # streamed nmap output and worker logs reach the console.
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
+    )
     settings = get_settings()
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
     await redis.ping()
