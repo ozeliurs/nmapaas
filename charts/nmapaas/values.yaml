@@ -3,47 +3,32 @@ image:
   tag: latest
   pullPolicy: IfNotPresent
 
-api:
+# Merged API + worker: one pod serves HTTP and consumes every location queue.
+app:
+  # Keep at 1: network namespaces are per-node and would collide.
+  replicas: 1
+  concurrency: 2
   service:
     type: ClusterIP
     port: 80
   resources:
     requests:
-      cpu: 50m
-      memory: 96Mi
+      cpu: 100m
+      memory: 160Mi
     limits:
-      cpu: 500m
-      memory: 256Mi
+      cpu: "1"
+      memory: 512Mi
 
 auth:
   existingSecret: ""
   apiKey: change-me
 
-pia:
+vpn:
+  # Secret holding one WireGuard config per location, with keys named
+  # <location>.conf. Either set existingSecret or provide inline configs.
   existingSecret: ""
-  username: ""
-  password: ""
-  image: ghcr.io/thrnz/docker-wireguard-pia:20260801_master_9e89d10
-  # Must include your Kubernetes service and pod networks so workers can reach Redis.
-  localNetworks: "10.0.0.0/8"
-  keepalive: 25
-  reconnect: true
-  resources:
-    requests:
-      cpu: 10m
-      memory: 32Mi
-    limits:
-      cpu: 250m
-      memory: 128Mi
-
-worker:
-  resources:
-    requests:
-      cpu: 50m
-      memory: 64Mi
-    limits:
-      cpu: "1"
-      memory: 512Mi
+  configs: {}
+  configDir: /etc/vpn
 
 redis:
   image: redis:8.0-alpine
@@ -62,12 +47,11 @@ scan:
   allowPrivateTargets: false
   allowedTargetCidrs: ""
 
+# Each entry is a scan location. Set `subnet` to give it a WireGuard
+# namespace vpn-<name> with a /24 veth pair on <subnet>.0/24 (using the
+# config under <name>.conf); omit `subnet` to scan directly without a VPN.
 locations:
-  - name: swiss
-    piaLocation: swiss
-    replicas: 1
-    concurrency: 2
-  - name: us-california
-    piaLocation: us_california
-    replicas: 1
-    concurrency: 2
+  - name: de-ber
+    subnet: "10.200.1"
+  - name: jp-tok
+    subnet: "10.200.3"

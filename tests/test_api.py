@@ -11,7 +11,7 @@ from nmapaas.store import ScanStore
 async def test_default_location_uses_least_loaded_worker() -> None:
     redis = FakeRedis(decode_responses=True)
     store = ScanStore(redis, ttl_seconds=600)
-    settings = Settings(scan_locations="marseille-france,netherlands")
+    settings = Settings(locations="marseille-france,netherlands")
     marseille_request = ScanCreate(
         target=ip_address("8.8.8.8"), location="marseille-france"
     )

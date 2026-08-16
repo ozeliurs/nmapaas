@@ -1,6 +1,6 @@
 apiVersion: v2
 name: nmapaas
-description: Location-aware Nmap API with PIA WireGuard workers
+description: Location-aware Nmap API using WireGuard network namespaces
 type: application
-version: 0.2.0
-appVersion: "0.2.0"
+version: 0.3.0
+appVersion: "0.3.0"

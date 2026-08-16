@@ -31,6 +31,7 @@ async def run_scan(
     timeout_seconds: int,
     on_progress: Callable[[float], Awaitable[None]],
     should_cancel: Callable[[], Awaitable[bool]],
+    namespace: str | None = None,
 ) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="nmapaas-") as temporary_directory:
         output_path = Path(temporary_directory) / "result.xml"
@@ -44,6 +45,8 @@ async def run_scan(
             "--",
             target,
         ]
+        if namespace:
+            command = ["ip", "netns", "exec", namespace, *command]
         process = await asyncio.create_subprocess_exec(
             *command,
             stdout=asyncio.subprocess.DEVNULL,
