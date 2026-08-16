@@ -16,6 +16,10 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{- default (printf "%s-api" (include "nmapaas.fullname" .)) .Values.auth.existingSecret -}}
 {{- end -}}
 
-{{- define "nmapaas.piaSecret" -}}
-{{- default (printf "%s-pia" (include "nmapaas.fullname" .)) .Values.pia.existingSecret -}}
+{{- define "nmapaas.vpnSecret" -}}
+{{- default (printf "%s-vpn" (include "nmapaas.fullname" .)) .Values.vpn.existingSecret -}}
+{{- end -}}
+
+{{- define "nmapaas.locations" -}}
+{{- range $index, $location := .Values.locations }}{{ if $index }},{{ end }}{{ $location.name }}{{ if $location.subnet }}:{{ $location.subnet }}{{ end }}{{ end -}}
 {{- end -}}

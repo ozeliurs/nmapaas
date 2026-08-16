@@ -1,0 +1,100 @@
+{{- if and (not .Values.vpn.existingSecret) (not .Values.vpn.configs) }}
+{{- fail "vpn.existingSecret or vpn.configs is required" }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nmapaas.fullname" . }}
+  labels:
+    {{- include "nmapaas.labels" . | nindent 4 }}
+    app.kubernetes.io/component: app
+spec:
+  # Namespaces are per-node; more than one replica on a node would collide.
+  replicas: {{ .Values.app.replicas }}
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "nmapaas.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: app
+  template:
+    metadata:
+      labels:
+        {{- include "nmapaas.labels" . | nindent 8 }}
+        app.kubernetes.io/component: app
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        # Single merged container. The image entrypoint (docker-entrypoint.sh)
+        # runs `nmapaas-netns setup` in THIS container's network namespace
+        # before starting Uvicorn, so the veth host ends, NAT rules, and the
+        # per-location namespaces all live in the same persistent namespace as
+        # the process that uses them. It then serves HTTP and consumes every
+        # location queue in-process, running nmap via `ip netns exec`.
+        - name: app
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8000
+          envFrom:
+            - configMapRef:
+                name: {{ include "nmapaas.fullname" . }}
+          env:
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "nmapaas.apiSecret" . }}
+                  key: api-key
+            - name: WORKER_CONCURRENCY
+              value: {{ .Values.app.concurrency | quote }}
+          # Startup is gated on the self-check: if a tunnel never carries
+          # traffic, setup exits non-zero and the container fails fast.
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            {{- toYaml .Values.app.resources | nindent 12 }}
+          # Namespace management and `ip netns exec` require root with these
+          # capabilities. The container is not privileged.
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              add: ["NET_ADMIN", "SYS_ADMIN"]
+              drop: ["ALL"]
+          volumeMounts:
+            - name: vpn-configs
+              mountPath: {{ .Values.vpn.configDir }}
+              readOnly: true
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: vpn-configs
+          secret:
+            secretName: {{ include "nmapaas.vpnSecret" . }}
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "nmapaas.fullname" . }}
+  labels:
+    {{- include "nmapaas.labels" . | nindent 4 }}
+spec:
+  type: {{ .Values.app.service.type }}
+  selector:
+    app.kubernetes.io/name: {{ include "nmapaas.name" . }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+    app.kubernetes.io/component: app
+  ports:
+    - name: http
+      port: {{ .Values.app.service.port }}
+      targetPort: http

@@ -23,7 +23,7 @@ jobs:
       - run: ruff check .
       - run: pytest
       - uses: azure/setup-helm@v4
-      - run: helm lint charts/nmapaas --set auth.existingSecret=nmapaas-api --set pia.existingSecret=nmapaas-pia
+      - run: helm lint charts/nmapaas --set auth.existingSecret=nmapaas-api --set vpn.existingSecret=nmapaas-vpn
 
   image:
     needs: test

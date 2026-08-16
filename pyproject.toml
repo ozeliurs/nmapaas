@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "nmapaas"
 version = "0.1.0"
-description = "A queued Nmap HTTP API with location-aware workers"
+description = "A queued Nmap HTTP API scanning through VPN network namespaces"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.116,<1",
@@ -24,7 +24,7 @@ dev = [
 ]
 
 [project.scripts]
-nmapaas-worker = "nmapaas.worker:main"
+nmapaas-netns = "nmapaas.vpn:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/nmapaas"]

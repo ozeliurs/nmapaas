@@ -1,3 +1,5 @@
+import asyncio
+import logging
 import secrets
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -13,17 +15,37 @@ from redis.asyncio import Redis
 from nmapaas.config import Settings, get_settings
 from nmapaas.models import Scan, ScanCreate
 from nmapaas.store import ScanStore
+from nmapaas.worker import consume_forever
+
+logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # Uvicorn configures its own loggers but not the root logger; set INFO so
+    # streamed nmap output and worker logs reach the console.
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s"
+    )
     settings = get_settings()
     redis = Redis.from_url(settings.redis_url, decode_responses=True)
     await redis.ping()
     app.state.redis = redis
     app.state.store = ScanStore(redis, settings.job_ttl_seconds)
-    yield
-    await redis.aclose()
+    # Merged worker: consume every location queue as background tasks.
+    # Namespaces and tunnels are set up beforehand by the init container.
+    consumer = asyncio.create_task(consume_forever(redis, settings))
+    try:
+        yield
+    finally:
+        consumer.cancel()
+        try:
+            await consumer
+        except asyncio.CancelledError:
+            pass
+        except Exception:
+            logger.exception("scan consumer crashed")
+        await redis.aclose()
 
 
 app = FastAPI(title="Nmap as a Service", version="0.1.0", lifespan=lifespan)
@@ -84,7 +106,7 @@ async def get_locations(
     settings: Annotated[Settings, Depends(get_settings)],
 ) -> list[dict[str, str]]:
     return [{"name": "default", "type": "least-loaded"}] + [
-        {"name": location, "type": "wireguard"} for location in sorted(settings.locations)
+        {"name": location, "type": "namespace"} for location in sorted(settings.location_names)
     ]
 
 
@@ -99,11 +121,11 @@ async def create_scan(
     settings: Annotated[Settings, Depends(get_settings)],
     store: Annotated[ScanStore, Depends(get_store)],
 ) -> Scan:
-    if not settings.locations:
+    if not settings.location_names:
         raise HTTPException(status_code=503, detail="no scan locations configured")
     if body.location == "default":
-        location = await store.least_loaded_location(settings.locations)
-    elif body.location in settings.locations:
+        location = await store.least_loaded_location(settings.location_names)
+    elif body.location in settings.location_names:
         location = body.location
     else:
         raise HTTPException(status_code=422, detail="unsupported scan location")

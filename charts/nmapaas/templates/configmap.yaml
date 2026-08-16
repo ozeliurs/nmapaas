@@ -6,7 +6,8 @@ metadata:
     {{- include "nmapaas.labels" . | nindent 4 }}
 data:
   REDIS_URL: redis://{{ include "nmapaas.fullname" . }}-redis:6379/0
-  SCAN_LOCATIONS: {{ range $index, $location := .Values.locations }}{{ if $index }},{{ end }}{{ $location.name }}{{ end }}
+  LOCATIONS: {{ include "nmapaas.locations" . | quote }}
+  VPN_CONFIG_DIR: {{ .Values.vpn.configDir | quote }}
   JOB_TTL_SECONDS: {{ .Values.scan.jobTtlSeconds | quote }}
   SCAN_TIMEOUT_SECONDS: {{ .Values.scan.timeoutSeconds | quote }}
   ALLOW_PRIVATE_TARGETS: {{ .Values.scan.allowPrivateTargets | quote }}

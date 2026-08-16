@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import re
 import tempfile
 import xml.etree.ElementTree as ET
@@ -7,6 +8,8 @@ from pathlib import Path
 from typing import Any
 
 from nmapaas.models import ScanProfile
+
+logger = logging.getLogger(__name__)
 
 PROFILE_ARGUMENTS = {
     ScanProfile.QUICK: ["-sT", "-Pn", "-T4", "--top-ports", "100"],
@@ -31,6 +34,7 @@ async def run_scan(
     timeout_seconds: int,
     on_progress: Callable[[float], Awaitable[None]],
     should_cancel: Callable[[], Awaitable[bool]],
+    namespace: str | None = None,
 ) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="nmapaas-") as temporary_directory:
         output_path = Path(temporary_directory) / "result.xml"
@@ -44,9 +48,11 @@ async def run_scan(
             "--",
             target,
         ]
+        if namespace:
+            command = ["ip", "netns", "exec", namespace, *command]
         process = await asyncio.create_subprocess_exec(
             *command,
-            stdout=asyncio.subprocess.DEVNULL,
+            stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         stderr_lines: list[str] = []
@@ -55,11 +61,22 @@ async def run_scan(
             assert process.stderr is not None
             async for raw_line in process.stderr:
                 line = raw_line.decode(errors="replace").strip()
+                if not line:
+                    continue
                 stderr_lines.append(line)
+                logger.info("nmap %s: %s", target, line)
                 if match := PROGRESS_PATTERN.search(line):
                     await on_progress(float(match.group(1)))
 
+        async def consume_stdout() -> None:
+            assert process.stdout is not None
+            async for raw_line in process.stdout:
+                line = raw_line.decode(errors="replace").rstrip()
+                if line:
+                    logger.info("nmap %s: %s", target, line)
+
         stderr_task = asyncio.create_task(consume_stderr())
+        stdout_task = asyncio.create_task(consume_stdout())
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout_seconds
         cancelled = False
@@ -85,9 +102,11 @@ async def run_scan(
                     process.kill()
                     await process.wait()
             await stderr_task
+            await stdout_task
         finally:
-            if not stderr_task.done():
-                stderr_task.cancel()
+            for task in (stderr_task, stdout_task):
+                if not task.done():
+                    task.cancel()
 
         if cancelled:
             raise ScanCancelledError
